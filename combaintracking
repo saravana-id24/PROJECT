@@ -1,0 +1,81 @@
+import cv2
+import mediapipe as mp
+import numpy as np
+from pynput.keyboard import Key, Controller
+
+keyboard = Controller()
+
+################################
+wCam, hCam = 640, 480
+################################
+
+cap = cv2.VideoCapture(0)
+cap.set(3, wCam)
+cap.set(4, hCam)
+pTime = 0
+
+mpHands = mp.solutions.hands
+hands = mpHands.Hands()
+mpDraw = mp.solutions.drawing_utils
+
+minAngle = 0
+maxAngle = 180
+angleBar = 400
+angleDeg = 0
+minHand = 50  # 50
+maxHand = 300  # 300
+last_length = None
+
+while True:
+    success, img = cap.read()
+    if not success:
+        print("Failed to capture image")
+        break
+
+    imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    results = hands.process(imgRGB)
+
+    if results.multi_hand_landmarks:
+        for handLms in results.multi_hand_landmarks:
+            lmList = []
+            for id, lm in enumerate(handLms.landmark):
+                h, w, c = img.shape
+                cx, cy = int(lm.x * w), int(lm.y * h)
+                lmList.append([id, cx, cy])
+
+            if len(lmList) >= 9:
+                x1, y1 = lmList[4][1], lmList[4][2]
+                x2, y2 = lmList[8][1], lmList[8][2]
+                cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+
+                length = np.hypot(x2 - x1, y2 - y1)
+                angle = np.interp(length, [minHand, maxHand], [minAngle, maxAngle])
+                angleBar = np.interp(length, [minHand, maxHand], [400, 150])
+                angleDeg = np.interp(length, [minHand, maxHand], [0, 150])
+
+                if last_length:
+                    if length > last_length:
+                        keyboard.press(Key.media_volume_up)
+                        keyboard.release(Key.media_volume_up)
+                        print("VOL UP")
+                    elif length < last_length:
+                        keyboard.press(Key.media_volume_down)
+                        keyboard.release(Key.media_volume_down)
+                        print("VOL DOWN")
+
+                last_length = length
+
+                if length < 50:
+                    cv2.circle(img, (cx, cy), 15, (0, 255, 0), cv2.FILLED)
+
+    cv2.rectangle(img, (50, 150), (85, 150), (255, 0, 0), 3)
+    cv2.rectangle(img, (50, int(angleBar)), (85, 150), (255, 0, 0), cv2.FILLED)
+    cv2.putText(img, f'{int(angleDeg)} deg', (40, 90), cv2.FONT_HERSHEY_COMPLEX,
+                2, (0, 9, 255), 3)
+
+    cv2.imshow("Img", img)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
